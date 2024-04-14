@@ -23,6 +23,7 @@ namespace dunix {
 
 struct Args : public argparse::Args {
   bool &version = flag("v,version", "Display version.");
+  bool &fullPath = flag("f,full-path", "Display full paths of packages.");
   string &path =
       arg("path",
           "The path of the package to display disk usage breakdown for.")
@@ -148,19 +149,24 @@ struct Vertex {
     return references;
   }
 
-  vector<string> line() {
-    return vector{string(name.name()),          showBytes(removalImpact()),
-                  showBytes(narSize),           showBytes(closureSize()),
-                  to_string(references.size()), to_string(referrers.size())};
+  vector<string> line(function<string(StorePath)> formatPath) {
+    return vector{formatPath(name),
+                  showBytes(removalImpact()),
+                  showBytes(narSize),
+                  showBytes(closureSize()),
+                  to_string(references.size()),
+                  to_string(referrers.size())};
   }
 };
 
 class BreakdownComponentBase : public ComponentBase {
   Closure exit;
   vector<Vertex *> heirarchy;
+  bool fullPath;
 
 public:
-  BreakdownComponentBase(const string &path, Closure exit_) : exit(exit_) {
+  BreakdownComponentBase(const string &path, Closure exit_, bool fullPath_)
+      : exit(exit_), fullPath(fullPath_) {
     initNix();
     initPlugins();
 
@@ -222,19 +228,27 @@ public:
       delete v;
   }
 
+  struct FormatPath {
+    bool fullPath;
+    string operator()(StorePath s) {
+      return fullPath ? string("/nix/store").append(s.to_string())
+                      : string(s.name());
+    }
+  };
+
   virtual Element Render() noexcept override {
     Element path = paragraph(transform_reduce(
         heirarchy.begin() + 1, heirarchy.end(),
-        string(heirarchy.front()->name.name()),
+        string(FormatPath{fullPath}(heirarchy.front()->name)),
         [](string s1, string s2) { return s1 + " > " + s2; },
-        [](Vertex *v) { return string(v->name.name()); }));
+        [&](Vertex *v) { return FormatPath{fullPath}(v->name); }));
 
     vector<Vertex *> references = heirarchy.back()->sortedReferences();
     vector<vector<string>> lines(references.size() + 1);
     lines[0] = {"name",         "removal impact", "nar size",
                 "closure size", "references",     "refererrs"};
     transform(references.begin(), references.end(), lines.begin() + 1,
-              [](Vertex *v) { return v->line(); });
+              [&](Vertex *v) { return v->line(FormatPath{fullPath}); });
 
     Table table = Table(lines);
     table.SelectRow(0).Decorate(bold);
@@ -282,6 +296,11 @@ public:
       return true;
     }
 
+    if (event == Event::Character('f')) {
+      fullPath = !fullPath;
+      return true;
+    }
+
     if (event == Event::Character('g')) {
       selected = 0;
       return true;
@@ -306,8 +325,8 @@ public:
   };
 };
 
-Component BreakdownComponent(const string &path, Closure exit) {
-  return make_shared<BreakdownComponentBase>(path, exit);
+Component BreakdownComponent(const string &path, Closure exit, bool fullPath) {
+  return make_shared<BreakdownComponentBase>(path, exit, fullPath);
 }
 
 } // namespace dunix
@@ -324,7 +343,8 @@ int main(int argc, char *argv[]) {
 
     ScreenInteractive screen = ScreenInteractive::Fullscreen();
     screen.SetCursor({0, 0, Screen::Cursor::Hidden});
-    screen.Loop(BreakdownComponent(args.path, screen.ExitLoopClosure()));
+    screen.Loop(
+        BreakdownComponent(args.path, screen.ExitLoopClosure(), args.fullPath));
   } catch (nix::Error &e) {
     cerr << e.msg() << endl;
     return e.status;
