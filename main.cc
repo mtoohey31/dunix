@@ -66,8 +66,7 @@ struct Vertex {
 
 class BreakdownComponentBase : public ComponentBase {
   Closure exit;
-  unordered_map<StorePath, Vertex *> closure;
-  vector<StorePath> heirarchy;
+  vector<Vertex *> heirarchy;
 
 public:
   BreakdownComponentBase(const string &path, Closure exit_) : exit(exit_) {
@@ -77,9 +76,10 @@ public:
     using nix::ref;
     ref<Store> store = openStore();
     StorePath root = store->followLinksToStorePath(path);
-    heirarchy = {root};
 
     Vertex *root_node = new Vertex(root);
+    heirarchy = {root_node};
+    unordered_map<StorePath, Vertex *> closure;
     closure.emplace(root, root_node);
 
     queue<StorePath> queue;
@@ -112,11 +112,11 @@ public:
   virtual Element Render() noexcept override {
     Element path = paragraph(transform_reduce(
         heirarchy.begin() + 1, heirarchy.end(),
-        string(heirarchy.front().name()),
+        string(heirarchy.front()->name.name()),
         [](string s1, string s2) { return s1 + " > " + s2; },
-        [](StorePath p) { return string(p.name()); }));
+        [](Vertex *v) { return string(v->name.name()); }));
 
-    vector<Vertex *> references = closure[heirarchy.back()]->sortedReferences();
+    vector<Vertex *> references = heirarchy.back()->sortedReferences();
     vector<vector<string>> lines(references.size() + 1);
     lines[0] = {"name", "nar size", "removal impact", "references",
                 "refererrs"};
@@ -129,7 +129,7 @@ public:
     table.SelectColumns(1, 3).Decorate(align_right);
     table.SelectRow(0).DecorateCells(center);
     table.SelectColumn(0).Decorate(flex);
-    table.SelectRow(closure[heirarchy.back()]->selected + 1)
+    table.SelectRow(heirarchy.back()->selected + 1)
         .Decorate(bgcolor(Color::Blue));
 
     // TODO: Make table vertical separator extend to bottom of screen.
@@ -156,23 +156,21 @@ public:
     }
 
     if ((event == Event::ArrowRight || event == Event::Character('l')) &&
-        !closure[heirarchy.back()]->references.empty()) {
-      heirarchy.push_back(closure[heirarchy.back()]
-                              ->references[closure[heirarchy.back()]->selected]
-                              ->name);
+        !heirarchy.back()->references.empty()) {
+      heirarchy.push_back(
+          heirarchy.back()->references[heirarchy.back()->selected]);
       return true;
     }
 
     if ((event == Event::ArrowDown || event == Event::Character('j')) &&
-        closure[heirarchy.back()]->selected <
-            closure[heirarchy.back()]->references.size() - 1) {
-      closure[heirarchy.back()]->selected++;
+        heirarchy.back()->selected < heirarchy.back()->references.size() - 1) {
+      heirarchy.back()->selected++;
       return true;
     }
 
     if ((event == Event::ArrowUp || event == Event::Character('k')) &&
-        closure[heirarchy.back()]->selected > 0) {
-      closure[heirarchy.back()]->selected--;
+        heirarchy.back()->selected > 0) {
+      heirarchy.back()->selected--;
       return true;
     }
 
