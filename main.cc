@@ -86,7 +86,7 @@ struct Vertex {
   void shiftSelected(int64_t by) noexcept {
     if (by > 0 && selected + by >= references.size())
       selected = references.size() - 1;
-    else if (by < 0 && selected < -by)
+    else if (by < 0 && selected < (uint64_t)-by)
       selected = 0;
     else
       selected += by;

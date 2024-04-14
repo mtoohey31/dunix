@@ -16,6 +16,6 @@ pkg_check_modules(NIX REQUIRED nix-main nix-store)
 
 target_link_libraries(${PROJECT_NAME} argparse::argparse ftxui::screen ftxui::dom ftxui::component ${NIX_LIBRARIES})
 target_include_directories(${PROJECT_NAME} PUBLIC ${NIX_INCLUDE_DIRS})
-target_compile_options(${PROJECT_NAME} PUBLIC ${NIX_CFLAGS_OTHER})
+target_compile_options(${PROJECT_NAME} PUBLIC ${NIX_CFLAGS_OTHER} PRIVATE -Wall -Werror)
 
 install(TARGETS ${PROJECT_NAME})
