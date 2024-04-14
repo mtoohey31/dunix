@@ -179,7 +179,7 @@ public:
 
     // TODO: Make table vertical separator extend to bottom of screen.
 
-    // TODO: Support scrolling.
+    // TODO: Support scrolling and related keybinds.
 
     return window(
         text("dunix"),
@@ -192,31 +192,56 @@ public:
       return true;
     }
 
-    // TODO: More vim-like vertical movement bindings.
-
     if ((event == Event::ArrowLeft || event == Event::Character('h')) &&
         heirarchy.size() > 1) {
       heirarchy.pop_back();
       return true;
     }
 
-    if ((event == Event::ArrowRight || event == Event::Character('l')) &&
-        !heirarchy.back()->references.empty()) {
-      heirarchy.push_back(
-          heirarchy.back()->references[heirarchy.back()->selected]);
+    vector<Vertex *>::size_type &selected = heirarchy.back()->selected;
+    vector<Vertex *> &references = heirarchy.back()->references;
+
+    if ((event == Event::ArrowRight || event == Event::Character('l') ||
+         event == Event::Return) &&
+        !references.empty()) {
+      heirarchy.push_back(references[selected]);
       return true;
     }
 
     if ((event == Event::ArrowDown || event == Event::Character('j')) &&
-        heirarchy.back()->selected < heirarchy.back()->references.size() - 1) {
-      heirarchy.back()->selected++;
+        selected < references.size() - 1) {
+      selected++;
       return true;
     }
 
     if ((event == Event::ArrowUp || event == Event::Character('k')) &&
-        heirarchy.back()->selected > 0) {
-      heirarchy.back()->selected--;
+        selected > 0) {
+      selected--;
       return true;
+    }
+
+    if (event == Event::Character('g')) {
+      selected = 0;
+      return true;
+    }
+
+    if (event == Event::Character('G')) {
+      selected = references.size() - 1;
+      return true;
+    }
+
+    if (event == Event::Special({21}) || event == Event::Special({2})) {
+      if (selected < 10)
+        selected = 0;
+      else
+        selected -= 10;
+    }
+
+    if (event == Event::Special({4}) || event == Event::Special({6})) {
+      if (selected < references.size() - 10)
+        selected += 10;
+      else
+        selected = references.size() - 1;
     }
 
     return false;
