@@ -68,7 +68,7 @@ struct Args : public argparse::Args {
 
 struct Vertex {
   StorePath path;
-  uint64_t narSize; // NOTE: 0 means unknown, might want to track and display?
+  uint64_t narSize;
 
   optional<SortMetric> metric;
   vector<Vertex *>::size_type selected = 0;
