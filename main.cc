@@ -60,14 +60,14 @@ struct Args : public argparse::Args {
             "sum of the nar size metric for everything in the store path's "
             "closure that has no referrers outside of the closure.\n"
          << "       references : The number of store paths that this one "
-            "references.\n"
+            "references directly.\n"
          << "        referrers : The number of store paths that reference this "
-            "one.\n";
+            "one directly.\n";
   }
 };
 
 struct Vertex {
-  StorePath name;
+  StorePath path;
   uint64_t narSize; // NOTE: 0 means unknown, might want to track and display?
 
   optional<SortMetric> metric;
@@ -79,9 +79,9 @@ struct Vertex {
   optional<uint64_t> removalImpact_;
   optional<uint64_t> closureSize_;
 
-  Vertex(const StorePath &name_) noexcept : name(name_) {}
+  Vertex(const StorePath &name_) noexcept : path(name_) {}
   Vertex(StorePath name_, Vertex *referrer) noexcept
-      : name(name_), referrers(vector<Vertex *>{referrer}) {}
+      : path(name_), referrers(vector<Vertex *>{referrer}) {}
 
   void shiftSelected(int64_t by) noexcept {
     if (by > 0 && selected + by >= references.size())
@@ -109,9 +109,9 @@ struct Vertex {
       const Vertex *v = queue.front();
       queue.pop();
 
-      closure.emplace(v->name, v);
+      closure.emplace(v->path, v);
       for (const Vertex *v : v->references) {
-        if (closure.contains(v->name))
+        if (closure.contains(v->path))
           continue;
 
         queue.emplace(v);
@@ -125,7 +125,7 @@ struct Vertex {
       vector<Vertex *> referrers = p.second->referrers;
       auto pos = find_if_not(
           referrers.begin(), referrers.end(),
-          [&closure](const Vertex *v) { return closure.contains(v->name); });
+          [&closure](const Vertex *v) { return closure.contains(v->path); });
       if (pos == end(referrers))
         res += p.second->narSize;
     }
@@ -138,7 +138,7 @@ struct Vertex {
     if (closureSize_)
       return *closureSize_;
 
-    unordered_map<StorePath, const Vertex *> closure;
+    unordered_set<const Vertex *> closure;
     queue<const Vertex *> queue;
     queue.push(this);
 
@@ -146,18 +146,18 @@ struct Vertex {
       const Vertex *v = queue.front();
       queue.pop();
 
-      closure.emplace(v->name, v);
+      closure.emplace(v);
       for (const Vertex *v : v->references) {
-        if (closure.contains(v->name))
+        if (closure.contains(v))
           continue;
 
         queue.emplace(v);
       }
     }
 
-    uint64_t res = transform_reduce(
-        closure.begin(), closure.end(), 0, plus{},
-        [](pair<StorePath, const Vertex *> p) { return p.second->narSize; });
+    uint64_t res =
+        transform_reduce(closure.begin(), closure.end(), UINT64_C(0), plus{},
+                         [](const Vertex *v) { return v->narSize; });
     closureSize_ = res;
     return res;
   }
@@ -207,7 +207,7 @@ struct Vertex {
   }
 
   Elements line(function<string(StorePath)> formatPath) {
-    return vector{text(formatPath(name)),
+    return vector{text(formatPath(path)),
                   text(showBytes(narSize)),
                   text(showBytes(closureSize())),
                   text(showBytes(removalImpact())),
@@ -248,7 +248,7 @@ public:
       node->narSize = info->narSize;
 
       for (const StorePath &reference : info->references) {
-        if (reference == node->name)
+        if (reference == node->path)
           continue;
 
         if (closure.contains(reference)) {
@@ -266,7 +266,7 @@ public:
   };
 
   virtual ~BreakdownComponentBase() {
-    set<const Vertex *> vertices;
+    unordered_set<const Vertex *> vertices;
     queue<const Vertex *> queue;
     queue.push(heirarchy.front());
 
@@ -298,9 +298,9 @@ public:
   virtual Element Render() noexcept override {
     Element path = paragraph(transform_reduce(
         heirarchy.begin() + 1, heirarchy.end(),
-        string(FormatPath{fullPath}(heirarchy.front()->name)),
+        string(FormatPath{fullPath}(heirarchy.front()->path)),
         [](string s1, string s2) { return s1 + " > " + s2; },
-        [&](Vertex *v) { return FormatPath{fullPath}(v->name); }));
+        [&](Vertex *v) { return FormatPath{fullPath}(v->path); }));
 
     vector<Vertex *> references =
         heirarchy.back()->sortedReferences(sortMetric);
