@@ -22,9 +22,15 @@ using namespace std;
 namespace dunix {
 
 struct Args : public argparse::Args {
+  bool &version = flag("v,version", "Display version.");
   string &path =
-      arg("path", "The path of the package to display size info for.")
+      arg("path",
+          "The path of the package to display disk usage breakdown for.")
           .set_default("result");
+
+  void welcome() {
+    cout << "Disk usage breakdowns for Nix packages.\n" << endl;
+  }
 };
 
 struct Vertex {
@@ -43,6 +49,15 @@ struct Vertex {
   Vertex(const StorePath &name_) noexcept : name(name_) {}
   Vertex(StorePath name_, Vertex *referrer) noexcept
       : name(name_), referrers(vector<Vertex *>{referrer}) {}
+
+  void shiftSelected(int64_t by) noexcept {
+    if (by > 0 && selected + by >= references.size())
+      selected = references.size() - 1;
+    else if (by < 0 && selected < -by)
+      selected = 0;
+    else
+      selected += by;
+  }
 
   uint64_t removalImpact() noexcept {
     if (removalImpact_)
@@ -185,6 +200,28 @@ public:
     }
   };
 
+  virtual ~BreakdownComponentBase() {
+    set<const Vertex *> vertices;
+    queue<const Vertex *> queue;
+    queue.push(heirarchy.front());
+
+    while (!queue.empty()) {
+      const Vertex *v = queue.front();
+      queue.pop();
+
+      vertices.emplace(v);
+      for (const Vertex *v : v->references) {
+        if (vertices.contains(v))
+          continue;
+
+        queue.emplace(v);
+      }
+    }
+
+    for (const Vertex *v : vertices)
+      delete v;
+  }
+
   virtual Element Render() noexcept override {
     Element path = paragraph(transform_reduce(
         heirarchy.begin() + 1, heirarchy.end(),
@@ -206,15 +243,11 @@ public:
     table.SelectRow(0).DecorateCells(center);
     table.SelectColumn(0).Decorate(flex);
     table.SelectRow(heirarchy.back()->selected + 1)
-        .Decorate(bgcolor(Color::Blue));
-
-    // TODO: Make table vertical separator extend to bottom of screen.
-
-    // TODO: Support scrolling and related keybinds.
+        .Decorate(bgcolor(Color::Blue) | focus);
 
     return window(
         text("dunix"),
-        vbox({path, separator(), yframe(table.Render()) | vscroll_indicator}));
+        vbox({path, separator(), table.Render() | vscroll_indicator | yframe}));
   };
 
   virtual bool OnEvent(Event event) noexcept override {
@@ -239,15 +272,13 @@ public:
       return true;
     }
 
-    if ((event == Event::ArrowDown || event == Event::Character('j')) &&
-        selected < references.size() - 1) {
-      selected++;
+    if (event == Event::ArrowDown || event == Event::Character('j')) {
+      heirarchy.back()->shiftSelected(1);
       return true;
     }
 
-    if ((event == Event::ArrowUp || event == Event::Character('k')) &&
-        selected > 0) {
-      selected--;
+    if (event == Event::ArrowUp || event == Event::Character('k')) {
+      heirarchy.back()->shiftSelected(-1);
       return true;
     }
 
@@ -261,18 +292,14 @@ public:
       return true;
     }
 
-    if (event == Event::Special({21}) || event == Event::Special({2})) {
-      if (selected < 10)
-        selected = 0;
-      else
-        selected -= 10;
+    if (event == Event::Special({4}) || event == Event::Special({6})) {
+      heirarchy.back()->shiftSelected(10);
+      return true;
     }
 
-    if (event == Event::Special({4}) || event == Event::Special({6})) {
-      if (selected < references.size() - 10)
-        selected += 10;
-      else
-        selected = references.size() - 1;
+    if (event == Event::Special({21}) || event == Event::Special({2})) {
+      heirarchy.back()->shiftSelected(-10);
+      return true;
     }
 
     return false;
@@ -290,6 +317,10 @@ int main(int argc, char *argv[]) {
   try {
     using dunix::Args;
     Args args = argparse::parse<Args>(argc, argv);
+    if (args.version) {
+      cout << VERSION << endl;
+      return 0;
+    }
 
     ScreenInteractive screen = ScreenInteractive::Fullscreen();
     screen.SetCursor({0, 0, Screen::Cursor::Hidden});
@@ -305,6 +336,5 @@ int main(int argc, char *argv[]) {
     return 1;
   };
 
-  // TODO: Check for leaks.
   return 0;
 }

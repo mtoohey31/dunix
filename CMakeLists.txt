@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.28)
-project(dunix VERSION 0.1.0 LANGUAGES CXX)
+file(READ "version.txt" VERSION)
+project(dunix VERSION ${VERSION} LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
 add_executable(${PROJECT_NAME} main.cc)
+add_definitions(-DVERSION="${VERSION}")
 
 find_package(argparse REQUIRED)
 

@@ -2,7 +2,7 @@
 
 stdenv.mkDerivation {
   pname = "dunix";
-  version = "0.1.0";
+  version = builtins.readFile ../../../../version.txt;
   src = builtins.path { path = ../../../..; name = "dunix-src"; };
   nativeBuildInputs = [ argparse boost cmake ftxui nix pkg-config ];
 }
