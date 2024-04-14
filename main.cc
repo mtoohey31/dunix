@@ -296,11 +296,18 @@ public:
   };
 
   virtual Element Render() noexcept override {
-    Element path = paragraph(transform_reduce(
-        heirarchy.begin() + 1, heirarchy.end(),
-        string(FormatPath{fullPath}(heirarchy.front()->path)),
-        [](string s1, string s2) { return s1 + " > " + s2; },
-        [&](Vertex *v) { return FormatPath{fullPath}(v->path); }));
+    FormatPath formatPath{fullPath};
+    Elements path{text(formatPath(heirarchy.front()->path))};
+    path.reserve(2 * heirarchy.size() + 1);
+    for (size_t i = 1; i < heirarchy.size(); i++) {
+      const Vertex *v = heirarchy[i];
+      if (v->referrers.size() == 1)
+        path.push_back(text(" → ") | color(Color::Green));
+      else
+        path.push_back(text(" ⇉ ") | color(Color::Red));
+
+      path.push_back(text(formatPath(v->path)));
+    }
 
     vector<Vertex *> references =
         heirarchy.back()->sortedReferences(sortMetric);
@@ -313,7 +320,7 @@ public:
         hbox({text("r") | color(Color::Red), text("eferences")}),
         hbox({text("R") | color(Color::Red), text("efererrs")})};
     transform(references.begin(), references.end(), lines.begin() + 1,
-              [&](Vertex *v) { return v->line(FormatPath{fullPath}); });
+              [&](Vertex *v) { return v->line(formatPath); });
 
     Table table = Table(lines);
     table.SelectCell(sortMetric + 1, 0).DecorateCells(underlined);
@@ -325,9 +332,9 @@ public:
     table.SelectRow(heirarchy.back()->selected + 1)
         .Decorate(bgcolor(Color::Blue) | focus);
 
-    return window(
-        text("dunix"),
-        vbox({path, separator(), table.Render() | vscroll_indicator | yframe}));
+    return window(text("dunix"),
+                  vbox({flexbox(path), separator(),
+                        table.Render() | vscroll_indicator | yframe}));
   };
 
   virtual bool OnEvent(Event event) noexcept override {
