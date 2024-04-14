@@ -206,13 +206,13 @@ struct Vertex {
     return references;
   }
 
-  vector<string> line(function<string(StorePath)> formatPath) {
-    return vector{formatPath(name),
-                  showBytes(narSize),
-                  showBytes(closureSize()),
-                  showBytes(removalImpact()),
-                  to_string(references.size()),
-                  to_string(referrers.size())};
+  Elements line(function<string(StorePath)> formatPath) {
+    return vector{text(formatPath(name)),
+                  text(showBytes(narSize)),
+                  text(showBytes(closureSize())),
+                  text(showBytes(removalImpact())),
+                  text(to_string(references.size())),
+                  text(to_string(referrers.size()))};
   }
 };
 
@@ -304,9 +304,14 @@ public:
 
     vector<Vertex *> references =
         heirarchy.back()->sortedReferences(sortMetric);
-    vector<vector<string>> lines(references.size() + 1);
-    lines[0] = {"name",           "nar size",   "closure size",
-                "removal impact", "references", "refererrs"};
+    vector<Elements> lines(references.size() + 1);
+    lines[0] = {
+        text("name"),
+        hbox({text("n") | color(Color::Red), text("ar size")}),
+        hbox({text("c") | color(Color::Red), text("losure size")}),
+        hbox({text("removal "), text("i") | color(Color::Red), text("mpact")}),
+        hbox({text("r") | color(Color::Red), text("eferences")}),
+        hbox({text("R") | color(Color::Red), text("efererrs")})};
     transform(references.begin(), references.end(), lines.begin() + 1,
               [&](Vertex *v) { return v->line(FormatPath{fullPath}); });
 
