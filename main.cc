@@ -38,6 +38,7 @@ struct Vertex {
   vector<Vertex *> referrers; // Nodes that refer to this one.
 
   optional<uint64_t> removalImpact_;
+  optional<uint64_t> closureSize_;
 
   Vertex(const StorePath &name_) noexcept : name(name_) {}
   Vertex(StorePath name_, Vertex *referrer) noexcept
@@ -85,6 +86,34 @@ struct Vertex {
     return res;
   }
 
+  uint64_t closureSize() noexcept {
+    if (closureSize_)
+      return *closureSize_;
+
+    unordered_map<StorePath, const Vertex *> closure;
+    queue<const Vertex *> queue;
+    queue.push(this);
+
+    while (!queue.empty()) {
+      const Vertex *v = queue.front();
+      queue.pop();
+
+      closure.emplace(v->name, v);
+      for (const Vertex *v : v->references) {
+        if (closure.contains(v->name))
+          continue;
+
+        queue.emplace(v);
+      }
+    }
+
+    uint64_t res = transform_reduce(
+        closure.begin(), closure.end(), 0, plus{},
+        [](pair<StorePath, const Vertex *> p) { return p.second->narSize; });
+    closureSize_ = res;
+    return res;
+  }
+
   vector<Vertex *> sortedReferences() noexcept {
     if (sorted)
       return references;
@@ -103,9 +132,9 @@ struct Vertex {
   }
 
   vector<string> line() {
-    return vector{string(name.name()), showBytes(removalImpact()),
-                  showBytes(narSize), to_string(references.size()),
-                  to_string(referrers.size())};
+    return vector{string(name.name()),          showBytes(removalImpact()),
+                  showBytes(narSize),           showBytes(closureSize()),
+                  to_string(references.size()), to_string(referrers.size())};
   }
 };
 
@@ -163,8 +192,8 @@ public:
 
     vector<Vertex *> references = heirarchy.back()->sortedReferences();
     vector<vector<string>> lines(references.size() + 1);
-    lines[0] = {"name", "removal impact", "nar size", "references",
-                "refererrs"};
+    lines[0] = {"name",         "removal impact", "nar size",
+                "closure size", "references",     "refererrs"};
     transform(references.begin(), references.end(), lines.begin() + 1,
               [](Vertex *v) { return v->line(); });
 
