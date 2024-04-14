@@ -1,6 +1,10 @@
 #include <algorithm>
+#include <cmath>
+#include <iomanip>
+#include <iostream>
 #include <numeric>
 #include <queue>
+#include <sstream>
 
 #include <argparse/argparse.hpp>
 
@@ -65,6 +69,19 @@ struct Args : public argparse::Args {
             "one directly.\n";
   }
 };
+
+string showSize(uint64_t size) {
+  if (size == 0)
+    return "0  B";
+
+  constexpr const string_view unitSuffixes[5] = {" B", "KB", "MB", "GB", "TB"};
+  ostringstream ss;
+  size_t base = log(size) / log(1024);
+  if (base >= 5)
+    base = 4;
+  ss << setprecision(3) << size / pow(1024, base) << " " << unitSuffixes[base];
+  return ss.str();
+}
 
 struct Vertex {
   StorePath path;
@@ -208,9 +225,9 @@ struct Vertex {
 
   Elements line(function<string(StorePath)> formatPath) {
     return vector{text(formatPath(path)),
-                  text(showBytes(narSize)),
-                  text(showBytes(closureSize())),
-                  text(showBytes(removalImpact())),
+                  text(showSize(narSize)),
+                  text(showSize(closureSize())),
+                  text(showSize(removalImpact())),
                   text(to_string(references.size())),
                   text(to_string(referrers.size()))};
   }
