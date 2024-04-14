@@ -22,25 +22,47 @@ using namespace std;
 namespace dunix {
 
 enum SortMetric {
-  RemovalImpact,
   Nar,
   Closure,
+  RemovalImpact,
   References,
   Referrers,
 };
 
 struct Args : public argparse::Args {
   bool &version = flag("v,version", "Display version.");
-  bool &fullPath = flag("f,full-path", "Display full paths of packages.");
+  bool &fullPath = flag("f,full-path", "Display full store paths.");
   SortMetric &sortMetric = flag("s,sort", "Metric by which to sort referrers.")
                                .set_default(RemovalImpact);
   string &path =
-      arg("path",
-          "The path of the package to display disk usage breakdown for.")
+      arg("path", "The store path to display disk usage breakdown for.")
           .set_default("result");
 
-  void welcome() {
-    cout << "Disk usage breakdowns for Nix packages.\n" << endl;
+  virtual void welcome() override {
+    cout << "Disk usage breakdowns for Nix store paths.\n\n";
+  }
+
+  virtual void help() override {
+    argparse::Args::help();
+    cout << "\nMetrics:\n"
+            "         nar size : The size of the files within the store path "
+            "itself. More specifically, the size of the output of nix-store "
+            "--dump.\n"
+         << "     closure size : The sum of the nar size metric for the store "
+            "path's closure, which includes the store path itself, and all "
+            "store paths referenced (directly or transitively) by it.\n"
+         << "   removal impact : The space that would be saved from the root "
+            "store path's closure if this store path's parent no longer "
+            "depended directly on it. This is 0 if the store path has more "
+            "than one referrer in the root's closure, because eliminating its "
+            "parent's reference won't impact the size since the root will "
+            "still depend on it through another referrer. Otherwise, it is the "
+            "sum of the nar size metric for everything in the store path's "
+            "closure that has no referrers outside of the closure.\n"
+         << "       references : The number of store paths that this one "
+            "references.\n"
+         << "        referrers : The number of store paths that reference this "
+            "one.\n";
   }
 };
 
@@ -186,9 +208,9 @@ struct Vertex {
 
   vector<string> line(function<string(StorePath)> formatPath) {
     return vector{formatPath(name),
-                  showBytes(removalImpact()),
                   showBytes(narSize),
                   showBytes(closureSize()),
+                  showBytes(removalImpact()),
                   to_string(references.size()),
                   to_string(referrers.size())};
   }
@@ -283,8 +305,8 @@ public:
     vector<Vertex *> references =
         heirarchy.back()->sortedReferences(sortMetric);
     vector<vector<string>> lines(references.size() + 1);
-    lines[0] = {"name",         "removal impact", "nar size",
-                "closure size", "references",     "refererrs"};
+    lines[0] = {"name",           "nar size",   "closure size",
+                "removal impact", "references", "refererrs"};
     transform(references.begin(), references.end(), lines.begin() + 1,
               [&](Vertex *v) { return v->line(FormatPath{fullPath}); });
 
@@ -402,7 +424,7 @@ int main(int argc, char *argv[]) {
     using dunix::Args;
     Args args = argparse::parse<Args>(argc, argv);
     if (args.version) {
-      cout << VERSION << endl;
+      cout << VERSION << "\n";
       return 0;
     }
 
@@ -411,13 +433,13 @@ int main(int argc, char *argv[]) {
     screen.Loop(BreakdownComponent(args.path, screen.ExitLoopClosure(),
                                    args.fullPath, args.sortMetric));
   } catch (nix::Error &e) {
-    cerr << e.msg() << endl;
+    cerr << e.msg() << "\n";
     return e.status;
   } catch (exception &e) {
-    cerr << e.what() << endl;
+    cerr << e.what() << "\n";
     return 1;
   } catch (...) {
-    cerr << "unknown error" << endl;
+    cerr << "unknown error\n";
     return 1;
   };
 

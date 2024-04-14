@@ -1,3 +1,3 @@
 # `dunix`
 
-`dunix` provides disk usage breakdowns for Nix packages.
+`dunix` provides disk usage breakdowns for Nix store paths.
