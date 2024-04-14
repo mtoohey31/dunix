@@ -21,9 +21,19 @@ using namespace std;
 
 namespace dunix {
 
+enum SortMetric {
+  RemovalImpact,
+  Nar,
+  Closure,
+  References,
+  Referrers,
+};
+
 struct Args : public argparse::Args {
   bool &version = flag("v,version", "Display version.");
   bool &fullPath = flag("f,full-path", "Display full paths of packages.");
+  SortMetric &sortMetric = flag("s,sort", "Metric by which to sort referrers.")
+                               .set_default(RemovalImpact);
   string &path =
       arg("path",
           "The path of the package to display disk usage breakdown for.")
@@ -38,7 +48,7 @@ struct Vertex {
   StorePath name;
   uint64_t narSize; // NOTE: 0 means unknown, might want to track and display?
 
-  bool sorted = false;
+  optional<SortMetric> metric;
   vector<Vertex *>::size_type selected = 0;
   vector<Vertex *> references; // Nodes that this one refers to.
 
@@ -130,22 +140,47 @@ struct Vertex {
     return res;
   }
 
-  vector<Vertex *> sortedReferences() noexcept {
-    if (sorted)
+  vector<Vertex *> sortedReferences(SortMetric by) noexcept {
+    if (metric && *metric == by)
       return references;
 
-    // TODO: Support sorting by different metrics?
+    function<bool(Vertex *, Vertex *)> comp;
+    switch (by) {
+    case RemovalImpact:
+      comp = [](Vertex *v1, Vertex *v2) {
+        if (v1->removalImpact() > v2->removalImpact())
+          return true;
 
-    sort(references.begin(), references.end(), [](Vertex *v1, Vertex *v2) {
-      if (v1->removalImpact() > v2->removalImpact())
-        return true;
+        if (v1->removalImpact() < v2->removalImpact())
+          return false;
 
-      if (v1->removalImpact() < v2->removalImpact())
-        return false;
+        // Use nar as fallback, since zero impact is common.
+        return v1->narSize > v2->narSize;
+      };
+      break;
+    case Nar:
+      comp = [](Vertex *v1, Vertex *v2) { return v1->narSize > v2->narSize; };
+      break;
+    case Closure:
+      comp = [](Vertex *v1, Vertex *v2) {
+        return v1->closureSize() > v2->closureSize();
+      };
+      break;
+    case References:
+      comp = [](Vertex *v1, Vertex *v2) {
+        return v1->references.size() > v2->references.size();
+      };
+      break;
+    case Referrers:
+      comp = [](Vertex *v1, Vertex *v2) {
+        return v1->referrers.size() > v2->referrers.size();
+      };
+      break;
+    }
 
-      return v1->narSize > v2->narSize;
-    });
-    sorted = true;
+    stable_sort(references.begin(), references.end(), comp);
+
+    metric = by;
     return references;
   }
 
@@ -160,13 +195,15 @@ struct Vertex {
 };
 
 class BreakdownComponentBase : public ComponentBase {
-  Closure exit;
+  ftxui::Closure exit;
   vector<Vertex *> heirarchy;
   bool fullPath;
+  SortMetric sortMetric;
 
 public:
-  BreakdownComponentBase(const string &path, Closure exit_, bool fullPath_)
-      : exit(exit_), fullPath(fullPath_) {
+  BreakdownComponentBase(const string &path, ftxui::Closure exit_,
+                         bool fullPath_, SortMetric sortMetric_)
+      : exit(exit_), fullPath(fullPath_), sortMetric(sortMetric_) {
     initNix();
     initPlugins();
 
@@ -243,7 +280,8 @@ public:
         [](string s1, string s2) { return s1 + " > " + s2; },
         [&](Vertex *v) { return FormatPath{fullPath}(v->name); }));
 
-    vector<Vertex *> references = heirarchy.back()->sortedReferences();
+    vector<Vertex *> references =
+        heirarchy.back()->sortedReferences(sortMetric);
     vector<vector<string>> lines(references.size() + 1);
     lines[0] = {"name",         "removal impact", "nar size",
                 "closure size", "references",     "refererrs"};
@@ -251,6 +289,7 @@ public:
               [&](Vertex *v) { return v->line(FormatPath{fullPath}); });
 
     Table table = Table(lines);
+    table.SelectCell(sortMetric + 1, 0).DecorateCells(underlined);
     table.SelectRow(0).Decorate(bold);
     table.SelectAll().SeparatorVertical();
     table.SelectColumns(1, -1).Decorate(align_right);
@@ -301,6 +340,31 @@ public:
       return true;
     }
 
+    if (event == Event::Character('i')) {
+      sortMetric = RemovalImpact;
+      return true;
+    }
+
+    if (event == Event::Character('n')) {
+      sortMetric = Nar;
+      return true;
+    }
+
+    if (event == Event::Character('c')) {
+      sortMetric = Closure;
+      return true;
+    }
+
+    if (event == Event::Character('r')) {
+      sortMetric = References;
+      return true;
+    }
+
+    if (event == Event::Character('R')) {
+      sortMetric = Referrers;
+      return true;
+    }
+
     if (event == Event::Character('g')) {
       selected = 0;
       return true;
@@ -325,8 +389,9 @@ public:
   };
 };
 
-Component BreakdownComponent(const string &path, Closure exit, bool fullPath) {
-  return make_shared<BreakdownComponentBase>(path, exit, fullPath);
+Component BreakdownComponent(const string &path, ftxui::Closure exit,
+                             bool fullPath, SortMetric sortMetric) {
+  return make_shared<BreakdownComponentBase>(path, exit, fullPath, sortMetric);
 }
 
 } // namespace dunix
@@ -343,8 +408,8 @@ int main(int argc, char *argv[]) {
 
     ScreenInteractive screen = ScreenInteractive::Fullscreen();
     screen.SetCursor({0, 0, Screen::Cursor::Hidden});
-    screen.Loop(
-        BreakdownComponent(args.path, screen.ExitLoopClosure(), args.fullPath));
+    screen.Loop(BreakdownComponent(args.path, screen.ExitLoopClosure(),
+                                   args.fullPath, args.sortMetric));
   } catch (nix::Error &e) {
     cerr << e.msg() << endl;
     return e.status;
