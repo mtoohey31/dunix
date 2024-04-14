@@ -312,13 +312,13 @@ public:
     vector<Vertex *> references =
         heirarchy.back()->sortedReferences(sortMetric);
     vector<Elements> lines(references.size() + 1);
-    lines[0] = {
-        text("name"),
-        hbox({text("n") | color(Color::Red), text("ar size")}),
-        hbox({text("c") | color(Color::Red), text("losure size")}),
-        hbox({text("removal "), text("i") | color(Color::Red), text("mpact")}),
-        hbox({text("r") | color(Color::Red), text("eferences")}),
-        hbox({text("R") | color(Color::Red), text("efererrs")})};
+    lines[0] = {text("name"),
+                hbox({text("n") | color(Color::Yellow), text("ar size")}),
+                hbox({text("c") | color(Color::Yellow), text("losure size")}),
+                hbox({text("removal "), text("i") | color(Color::Yellow),
+                      text("mpact")}),
+                hbox({text("r") | color(Color::Yellow), text("eferences")}),
+                hbox({text("R") | color(Color::Yellow), text("efererrs")})};
     transform(references.begin(), references.end(), lines.begin() + 1,
               [&](Vertex *v) { return v->line(formatPath); });
 
