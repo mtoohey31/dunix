@@ -37,29 +37,74 @@ struct Vertex {
 
   vector<Vertex *> referrers; // Nodes that refer to this one.
 
+  optional<uint64_t> removalImpact_;
+
   Vertex(const StorePath &name_) noexcept : name(name_) {}
   Vertex(StorePath name_, Vertex *referrer) noexcept
       : name(name_), referrers(vector<Vertex *>{referrer}) {}
 
-  uint64_t removalImpact() const noexcept {
-    // TODO: Check for descendants that are only referenced by this vertex's
-    // closure.
-    return referrers.size() == 1 ? narSize : 0;
+  uint64_t removalImpact() noexcept {
+    if (removalImpact_)
+      return *removalImpact_;
+
+    if (referrers.size() > 1) {
+      removalImpact_ = 0;
+      return 0;
+    }
+
+    unordered_map<StorePath, const Vertex *> closure;
+    queue<const Vertex *> queue;
+    queue.push(this);
+
+    while (!queue.empty()) {
+      const Vertex *v = queue.front();
+      queue.pop();
+
+      closure.emplace(v->name, v);
+      for (const Vertex *v : v->references) {
+        if (closure.contains(v->name))
+          continue;
+
+        queue.emplace(v);
+      }
+    }
+
+    // Won't be counted below since the closure doesn't contain the single
+    // parent referrer.
+    uint64_t res = narSize;
+    for (pair<StorePath, const Vertex *> p : closure) {
+      vector<Vertex *> referrers = p.second->referrers;
+      auto pos = find_if_not(
+          referrers.begin(), referrers.end(),
+          [&closure](const Vertex *v) { return closure.contains(v->name); });
+      if (pos == end(referrers))
+        res += p.second->narSize;
+    }
+
+    removalImpact_ = res;
+    return res;
   }
 
   vector<Vertex *> sortedReferences() noexcept {
     if (sorted)
       return references;
 
-    sort(references.begin(), references.end(),
-         [](Vertex *v1, Vertex *v2) { return v1->narSize > v2->narSize; });
+    sort(references.begin(), references.end(), [](Vertex *v1, Vertex *v2) {
+      if (v1->removalImpact() > v2->removalImpact())
+        return true;
+
+      if (v1->removalImpact() < v2->removalImpact())
+        return false;
+
+      return v1->narSize > v2->narSize;
+    });
     sorted = true;
     return references;
   }
 
   vector<string> line() {
-    return vector{string(name.name()), showBytes(narSize),
-                  showBytes(removalImpact()), to_string(references.size()),
+    return vector{string(name.name()), showBytes(removalImpact()),
+                  showBytes(narSize), to_string(references.size()),
                   to_string(referrers.size())};
   }
 };
@@ -118,7 +163,7 @@ public:
 
     vector<Vertex *> references = heirarchy.back()->sortedReferences();
     vector<vector<string>> lines(references.size() + 1);
-    lines[0] = {"name", "nar size", "removal impact", "references",
+    lines[0] = {"name", "removal impact", "nar size", "references",
                 "refererrs"};
     transform(references.begin(), references.end(), lines.begin() + 1,
               [](Vertex *v) { return v->line(); });
@@ -126,7 +171,7 @@ public:
     Table table = Table(lines);
     table.SelectRow(0).Decorate(bold);
     table.SelectAll().SeparatorVertical();
-    table.SelectColumns(1, 3).Decorate(align_right);
+    table.SelectColumns(1, -1).Decorate(align_right);
     table.SelectRow(0).DecorateCells(center);
     table.SelectColumn(0).Decorate(flex);
     table.SelectRow(heirarchy.back()->selected + 1)
