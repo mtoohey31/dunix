@@ -118,6 +118,8 @@ struct Vertex {
     if (sorted)
       return references;
 
+    // TODO: Support sorting by different metrics?
+
     sort(references.begin(), references.end(), [](Vertex *v1, Vertex *v2) {
       if (v1->removalImpact() > v2->removalImpact())
         return true;
