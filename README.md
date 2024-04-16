@@ -36,3 +36,9 @@ Metrics:
 ```
 
 ![`dunix` screenshot](https://github.com/mtoohey31/dunix/assets/36740602/cf430c78-2d42-48f7-91f5-1b118f91a008)
+
+## Related
+
+- [nix-tree](https://github.com/utdemir/nix-tree) provides similar metrics with a slightly different UI.
+- [nix-du](https://github.com/symphorien/nix-du) displays relationships visually as a graph.
+- See the ["Related tools" section of nix-tree's README](https://github.com/utdemir/nix-tree?tab=readme-ov-file#related-tools) for more.
